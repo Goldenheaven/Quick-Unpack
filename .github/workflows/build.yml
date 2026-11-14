@@ -12,6 +12,8 @@ jobs:
   build:
     name: Build ${{ matrix.platform }}
     runs-on: windows-2022
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -29,12 +31,36 @@ jobs:
       - name: Build static libraries
         shell: cmd
         run: |
+          set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
+          for /f "usebackq delims=" %%i in (`"%VSWHERE%" -latest -products * -find Common7\Tools\VsDevCmd.bat`) do set "VSDEVCMD=%%i"
+          if not defined VSDEVCMD (
+            echo Visual Studio developer command script was not found.
+            exit /b 1
+          )
           if /I "${{ matrix.platform }}"=="x64" (
-            call Disasm\make64.bat
-            call Lua\make64.bat
+            call "%VSDEVCMD%" -host_arch=x64 -arch=x64 >nul || exit /b 1
+            pushd Disasm
+            call make64.bat || exit /b 1
+            popd
+            pushd Lua
+            call make64.bat || exit /b 1
+            popd
+            pushd MiniFMOD\mixer
+            call make64.bat || exit /b 1
+            move /Y asm64.obj ..\asm64.obj >nul || exit /b 1
+            popd
           ) else (
-            call Disasm\make32.bat
-            call Lua\make32.bat
+            call "%VSDEVCMD%" -host_arch=x64 -arch=x86 >nul || exit /b 1
+            pushd Disasm
+            call make32.bat || exit /b 1
+            popd
+            pushd Lua
+            call make32.bat || exit /b 1
+            popd
+            pushd MiniFMOD\mixer
+            call make32.bat || exit /b 1
+            move /Y asm32.obj ..\asm32.obj >nul || exit /b 1
+            popd
           )
 
       - name: Upgrade legacy Visual Studio projects
