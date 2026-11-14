@@ -1,0 +1,77 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - Win32
+          - x64
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build static libraries
+        shell: cmd
+        run: |
+          if /I "${{ matrix.platform }}"=="x64" (
+            call Disasm\make64.bat
+            call Lua\make64.bat
+          ) else (
+            call Disasm\make32.bat
+            call Lua\make32.bat
+          )
+
+      - name: Upgrade legacy Visual Studio projects
+        shell: pwsh
+        run: |
+          $devenv = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" `
+            -latest -products * -find Common7\IDE\devenv.com
+          if (-not $devenv) {
+            throw "Visual Studio devenv.com was not found"
+          }
+          & $devenv QUnpack.sln /Upgrade
+          & $devenv MiniFMOD\minifmod.sln /Upgrade
+
+      - name: Build MiniFMOD
+        shell: cmd
+        run: >
+          msbuild MiniFMOD\minifmod.sln
+          /m
+          /p:Configuration=Release
+          /p:Platform=${{ matrix.platform }}
+          /p:WindowsTargetPlatformVersion=10.0
+
+      - name: Build QUnpack
+        shell: cmd
+        run: >
+          msbuild QUnpack.sln
+          /m
+          /p:Configuration="Release EXE Unicode"
+          /p:Platform=${{ matrix.platform }}
+          /p:WindowsTargetPlatformVersion=10.0
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: QUnpack-${{ matrix.platform }}
+          path: |
+            _*Release/**
+            !_*Release/**/*.obj
+            !_*Release/**/*.pdb
+          if-no-files-found: error
